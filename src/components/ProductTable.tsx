@@ -20,6 +20,7 @@ import {
   Search,
   Filter,
   RefreshCw,
+  X,
 } from "lucide-react";
 import StatsDashboard from "./StatsDashboard";
 
@@ -43,6 +44,12 @@ const ProductTable: React.FC<ProductTableProps> = ({
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [inventoryData, setInventoryData] = useState<UpdateInventoryData[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRemoveGodownModal, setShowRemoveGodownModal] = useState(false);
+  const [selectedGodownsForRemoval, setSelectedGodownsForRemoval] = useState<Set<number>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isRemovingGodown, setIsRemovingGodown] = useState(false);
 
   useEffect(() => {
     if (jwt) {
@@ -135,6 +142,110 @@ const ProductTable: React.FC<ProductTableProps> = ({
     }
   };
 
+  const handleSelectProduct = (productId: number, checked: boolean) => {
+    setSelectedProducts((prev) => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(productId);
+      } else {
+        newSet.delete(productId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedProducts(new Set(filteredProducts.map((p) => p.id)));
+    } else {
+      setSelectedProducts(new Set());
+    }
+  };
+
+  const handleDeleteProducts = async () => {
+    if (!jwt || selectedProducts.size === 0) return;
+
+    try {
+      setIsDeleting(true);
+      const deletePromises = Array.from(selectedProducts).map((productId) =>
+        productService.deleteProduct(jwt, productId)
+      );
+      await Promise.all(deletePromises);
+      setSelectedProducts(new Set());
+      setShowDeleteConfirm(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error deleting products:", error);
+      alert("Failed to delete products. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleRemoveGodowns = async () => {
+    if (!jwt || selectedProducts.size === 0 || selectedGodownsForRemoval.size === 0) return;
+
+    try {
+      setIsRemovingGodown(true);
+      const removePromises: Promise<void>[] = [];
+      
+      selectedProducts.forEach((productId) => {
+        selectedGodownsForRemoval.forEach((godownId) => {
+          removePromises.push(
+            productService.removeGodownFromProduct(jwt, productId, godownId)
+          );
+        });
+      });
+
+      await Promise.all(removePromises);
+      setSelectedProducts(new Set());
+      setSelectedGodownsForRemoval(new Set());
+      setShowRemoveGodownModal(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error removing godowns:", error);
+      alert("Failed to remove godowns. Please try again.");
+    } finally {
+      setIsRemovingGodown(false);
+    }
+  };
+
+  const handleOpenRemoveGodownModal = () => {
+    if (selectedProducts.size === 0) {
+      alert("Please select at least one product");
+      return;
+    }
+    setShowRemoveGodownModal(true);
+  };
+
+  const getAvailableGodownsWithQuantities = () => {
+    const godownQuantities = new Map<number, { godown: Godown; totalQuantity: number }>();
+
+    // Calculate total quantity for each godown across selected products
+    filteredProducts
+      .filter((product) => selectedProducts.has(product.id))
+      .forEach((product) => {
+        product.inventory.forEach((inv) => {
+          if (inv.quantity > 0) {
+            const existing = godownQuantities.get(inv.godown.id);
+            if (existing) {
+              existing.totalQuantity += inv.quantity;
+            } else {
+              godownQuantities.set(inv.godown.id, {
+                godown: inv.godown,
+                totalQuantity: inv.quantity,
+              });
+            }
+          }
+        });
+      });
+
+    // Convert to array and sort by name
+    return Array.from(godownQuantities.values()).sort((a, b) =>
+      a.godown.name.localeCompare(b.godown.name)
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -155,13 +266,33 @@ const ProductTable: React.FC<ProductTableProps> = ({
             Manage your inventory and product catalog
           </p>
         </div>
-        <button
-          onClick={handleCreateProduct}
-          className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-medium"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Add Product
-        </button>
+        <div className="flex items-center gap-3">
+          {selectedProducts.size > 0 && (
+            <>
+              <button
+                onClick={handleOpenRemoveGodownModal}
+                className="flex items-center px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-xl hover:from-orange-700 hover:to-red-700 transition-all duration-200 shadow-lg hover:shadow-xl font-medium text-sm"
+              >
+                <Package className="h-4 w-4 mr-2" />
+                Remove Godown ({selectedProducts.size})
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-lg hover:shadow-xl font-medium text-sm"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete ({selectedProducts.size})
+              </button>
+            </>
+          )}
+          <button
+            onClick={handleCreateProduct}
+            className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-medium"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Add Product
+          </button>
+        </div>
       </div>
 
       {/* Stats Dashboard */}
@@ -241,6 +372,17 @@ const ProductTable: React.FC<ProductTableProps> = ({
             <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
               <tr>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredProducts.length > 0 &&
+                      filteredProducts.every((p) => selectedProducts.has(p.id))
+                    }
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Product Details
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -269,6 +411,14 @@ const ProductTable: React.FC<ProductTableProps> = ({
                   key={product.id}
                   className="hover:bg-blue-50/50 transition-colors duration-200"
                 >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedProducts.has(product.id)}
+                      onChange={(e) => handleSelectProduct(product.id, e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-3">
                       <div className="h-10 w-10 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center">
@@ -434,6 +584,190 @@ const ProductTable: React.FC<ProductTableProps> = ({
                   className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-medium"
                 >
                   Update Inventory
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-md bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20">
+            <div className="p-6">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="h-10 w-10 bg-gradient-to-br from-red-100 to-red-200 rounded-lg flex items-center justify-center">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Delete Products
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <p className="text-gray-700 mb-3">
+                  Are you sure you want to delete {selectedProducts.size} product(s)?
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800 font-medium">
+                    ⚠️ Warning: This will permanently delete the selected products and all associated data.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="px-6 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition-colors duration-200 font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteProducts}
+                  disabled={isDeleting}
+                  className="px-6 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl hover:from-red-700 hover:to-red-800 disabled:opacity-50 transition-all duration-200 shadow-lg hover:shadow-xl font-medium"
+                >
+                  {isDeleting ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Deleting...
+                    </div>
+                  ) : (
+                    "Delete Products"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Godown Modal */}
+      {showRemoveGodownModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-2xl bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="h-10 w-10 bg-gradient-to-br from-orange-100 to-red-100 rounded-lg flex items-center justify-center">
+                    <Package className="h-5 w-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Remove Godown from Products
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Select godowns to remove from {selectedProducts.size} selected product(s)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowRemoveGodownModal(false);
+                    setSelectedGodownsForRemoval(new Set());
+                  }}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Select Godowns to Remove *
+                </label>
+                {getAvailableGodownsWithQuantities().length === 0 ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                    <p className="text-sm text-yellow-800">
+                      No godowns with inventory found in the selected products.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 bg-gray-50 rounded-xl">
+                      {getAvailableGodownsWithQuantities().map(({ godown, totalQuantity }) => (
+                        <label
+                          key={godown.id}
+                          className="flex items-center justify-between p-3 bg-white rounded-xl hover:bg-gray-100 cursor-pointer transition-colors duration-200 border border-gray-200"
+                        >
+                          <div className="flex items-center flex-1">
+                            <input
+                              type="checkbox"
+                              checked={selectedGodownsForRemoval.has(godown.id)}
+                              onChange={(e) => {
+                                setSelectedGodownsForRemoval((prev) => {
+                                  const newSet = new Set(prev);
+                                  if (e.target.checked) {
+                                    newSet.add(godown.id);
+                                  } else {
+                                    newSet.delete(godown.id);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                              className="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                            />
+                            <span className="text-sm font-medium text-gray-700">
+                              {godown.name}
+                            </span>
+                          </div>
+                          <span className="text-sm font-semibold text-blue-600 ml-3 px-2 py-1 bg-blue-50 rounded-lg">
+                            Qty: {totalQuantity}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {selectedGodownsForRemoval.size === 0 && (
+                      <p className="mt-2 text-sm text-red-600">
+                        Please select at least one godown
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will remove the selected godown(s) from all {selectedProducts.size} selected product(s). 
+                  This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowRemoveGodownModal(false);
+                    setSelectedGodownsForRemoval(new Set());
+                  }}
+                  disabled={isRemovingGodown}
+                  className="px-6 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition-colors duration-200 font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRemoveGodowns}
+                  disabled={
+                    isRemovingGodown ||
+                    selectedGodownsForRemoval.size === 0 ||
+                    getAvailableGodownsWithQuantities().length === 0
+                  }
+                  className="px-6 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-xl hover:from-orange-700 hover:to-red-700 disabled:opacity-50 transition-all duration-200 shadow-lg hover:shadow-xl font-medium"
+                >
+                  {isRemovingGodown ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Removing...
+                    </div>
+                  ) : (
+                    "Remove Godown"
+                  )}
                 </button>
               </div>
             </div>

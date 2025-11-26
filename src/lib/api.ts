@@ -222,6 +222,26 @@ export const productService = {
         : [],
     };
   },
+
+  async deleteProduct(jwt: string, productId: number): Promise<void> {
+    await api.delete(`/products/${productId}`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  },
+
+  async removeGodownFromProduct(
+    jwt: string,
+    productId: number,
+    godownId: number
+  ): Promise<void> {
+    await api.post(
+      "/products/godown",
+      { productId, godownId },
+      {
+        headers: { Authorization: `Bearer ${jwt}` },
+      }
+    );
+  },
 };
 
 // Category Service
