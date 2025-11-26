@@ -21,6 +21,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const [categories, setCategories] = useState<Category[]>([]);
   const [godowns, setGodowns] = useState<Godown[]>([]);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{ categories?: string; godown?: string }>({});
   const [formData, setFormData] = useState<CreateProductData>({
     name: "",
     minimum_selling_price: 0,
@@ -77,6 +78,22 @@ const ProductForm: React.FC<ProductFormProps> = ({
     e.preventDefault();
     if (!jwt) return;
 
+    // Validate categories
+    if (formData.categories.length === 0) {
+      setErrors({ categories: "Please select at least one category" });
+      return;
+    }
+
+    // Validate godown (at least one godown must have quantity > 0)
+    const hasValidGodown = formData.inventory.some((inv) => inv.quantity > 0);
+    if (!hasValidGodown) {
+      setErrors({ godown: "Please set quantity for at least one godown" });
+      return;
+    }
+
+    // Clear errors if validation passes
+    setErrors({});
+
     try {
       setLoading(true);
       if (product) {
@@ -112,6 +129,10 @@ const ProductForm: React.FC<ProductFormProps> = ({
         ? [...prev.categories, categoryId]
         : prev.categories.filter((id) => id !== categoryId),
     }));
+    // Clear error when category is selected
+    if (checked && errors.categories) {
+      setErrors((prev) => ({ ...prev, categories: undefined }));
+    }
   };
 
   const handleInventoryChange = (godownId: number, quantity: number) => {
@@ -123,6 +144,10 @@ const ProductForm: React.FC<ProductFormProps> = ({
           )
         : [...prev.inventory, { godownId, quantity }],
     }));
+    // Clear error when a valid quantity is set
+    if (quantity > 0 && errors.godown) {
+      setErrors((prev) => ({ ...prev, godown: undefined }));
+    }
   };
 
   return (
@@ -257,7 +282,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Categories
+                Categories *
               </label>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {categories.map((category) => (
@@ -279,11 +304,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
                   </label>
                 ))}
               </div>
+              {errors.categories && (
+                <p className="mt-2 text-sm text-red-600">{errors.categories}</p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Inventory Distribution
+                Inventory Distribution *
               </label>
               <div className="space-y-3">
                 {godowns.map((godown) => (
@@ -313,6 +341,9 @@ const ProductForm: React.FC<ProductFormProps> = ({
                   </div>
                 ))}
               </div>
+              {errors.godown && (
+                <p className="mt-2 text-sm text-red-600">{errors.godown}</p>
+              )}
             </div>
           </form>
         </div>
