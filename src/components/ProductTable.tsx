@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Product,
   Category,
@@ -21,6 +21,8 @@ import {
   Filter,
   RefreshCw,
   X,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import StatsDashboard from "./StatsDashboard";
 
@@ -50,12 +52,32 @@ const ProductTable: React.FC<ProductTableProps> = ({
   const [selectedGodownsForRemoval, setSelectedGodownsForRemoval] = useState<Set<number>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRemovingGodown, setIsRemovingGodown] = useState(false);
+  const [categoryFilterSearch, setCategoryFilterSearch] = useState("");
+  const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+  const categoryFilterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (jwt) {
       loadData();
     }
   }, [jwt]);
+
+  // Close category filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        categoryFilterRef.current &&
+        !categoryFilterRef.current.contains(event.target as Node)
+      ) {
+        setIsCategoryFilterOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const loadData = async () => {
     if (!jwt) return;
@@ -321,18 +343,113 @@ const ProductTable: React.FC<ProductTableProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Filter by Category
             </label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50"
-            >
-              <option value="">All Categories</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id.toString()}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative" ref={categoryFilterRef}>
+              <div
+                onClick={() => setIsCategoryFilterOpen(!isCategoryFilterOpen)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 cursor-pointer flex items-center justify-between"
+              >
+                <span className="text-sm text-gray-700">
+                  {selectedCategory
+                    ? categories.find(
+                        (c) => c.id.toString() === selectedCategory
+                      )?.name || "All Categories"
+                    : "All Categories"}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-gray-400 transition-transform ${
+                    isCategoryFilterOpen ? "transform rotate-180" : ""
+                  }`}
+                />
+              </div>
+
+              {isCategoryFilterOpen && (
+                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-hidden">
+                  <div className="p-2 border-b border-gray-200">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search categories..."
+                        value={categoryFilterSearch}
+                        onChange={(e) => {
+                          setCategoryFilterSearch(e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="overflow-y-auto max-h-48">
+                    <div
+                      onClick={() => {
+                        setSelectedCategory("");
+                        setIsCategoryFilterOpen(false);
+                        setCategoryFilterSearch("");
+                      }}
+                      className={`flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer transition-colors ${
+                        !selectedCategory ? "bg-blue-50" : ""
+                      }`}
+                    >
+                      <div
+                        className={`w-4 h-4 border-2 rounded mr-3 flex items-center justify-center ${
+                          !selectedCategory
+                            ? "bg-blue-600 border-blue-600"
+                            : "border-gray-300"
+                        }`}
+                      >
+                        {!selectedCategory && (
+                          <Check className="h-3 w-3 text-white" />
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">
+                        All Categories
+                      </span>
+                    </div>
+                    {categories
+                      .filter((category) =>
+                        category.name
+                          .toLowerCase()
+                          .includes(categoryFilterSearch.toLowerCase())
+                      )
+                      .map((category) => {
+                        const isSelected =
+                          selectedCategory === category.id.toString();
+                        return (
+                          <div
+                            key={category.id}
+                            onClick={() => {
+                              setSelectedCategory(
+                                isSelected ? "" : category.id.toString()
+                              );
+                              setIsCategoryFilterOpen(false);
+                              setCategoryFilterSearch("");
+                            }}
+                            className={`flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer transition-colors ${
+                              isSelected ? "bg-blue-50" : ""
+                            }`}
+                          >
+                            <div
+                              className={`w-4 h-4 border-2 rounded mr-3 flex items-center justify-center ${
+                                isSelected
+                                  ? "bg-blue-600 border-blue-600"
+                                  : "border-gray-300"
+                              }`}
+                            >
+                              {isSelected && (
+                                <Check className="h-3 w-3 text-white" />
+                              )}
+                            </div>
+                            <span className="text-sm font-medium text-gray-700">
+                              {category.name}
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div>

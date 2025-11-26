@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Product, Category, Godown, CreateProductData } from "../types";
 import { productService, categoryService, godownService } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { X } from "lucide-react";
+import { X, ChevronDown, Search, Check } from "lucide-react";
 
 interface ProductFormProps {
   product?: Product | null;
@@ -22,6 +22,9 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const [godowns, setGodowns] = useState<Godown[]>([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ categories?: string; godown?: string }>({});
+  const [categorySearchTerm, setCategorySearchTerm] = useState("");
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState<CreateProductData>({
     name: "",
     minimum_selling_price: 0,
@@ -57,6 +60,23 @@ const ProductForm: React.FC<ProductFormProps> = ({
       });
     }
   }, [jwt, product]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsCategoryDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const loadData = async () => {
     if (!jwt) return;
@@ -133,6 +153,23 @@ const ProductForm: React.FC<ProductFormProps> = ({
     if (checked && errors.categories) {
       setErrors((prev) => ({ ...prev, categories: undefined }));
     }
+  };
+
+  const removeCategory = (categoryId: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      categories: prev.categories.filter((id) => id !== categoryId),
+    }));
+  };
+
+  const filteredCategories = categories.filter((category) =>
+    category.name.toLowerCase().includes(categorySearchTerm.toLowerCase())
+  );
+
+  const getSelectedCategoryNames = () => {
+    return categories
+      .filter((cat) => formData.categories.includes(cat.id))
+      .map((cat) => cat.name);
   };
 
   const handleInventoryChange = (godownId: number, quantity: number) => {
@@ -281,28 +318,109 @@ const ProductForm: React.FC<ProductFormProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Categories *
               </label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {categories.map((category) => (
-                  <label
-                    key={category.id}
-                    className="flex items-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 cursor-pointer transition-colors duration-200"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.categories.includes(category.id)}
-                      onChange={(e) =>
-                        handleCategoryChange(category.id, e.target.checked)
-                      }
-                      className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="text-sm font-medium text-gray-700">
-                      {category.name}
-                    </span>
-                  </label>
-                ))}
+              <div className="relative" ref={categoryDropdownRef}>
+                <div
+                  onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 cursor-pointer flex items-center justify-between min-h-[48px]"
+                >
+                  <div className="flex flex-wrap gap-2 flex-1">
+                    {formData.categories.length === 0 ? (
+                      <span className="text-gray-400 text-sm">
+                        Select categories...
+                      </span>
+                    ) : (
+                      getSelectedCategoryNames().map((name, index) => {
+                        const categoryId = categories.find((c) => c.name === name)?.id;
+                        return (
+                          <span
+                            key={categoryId}
+                            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {name}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (categoryId) removeCategory(categoryId);
+                              }}
+                              className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-blue-200"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        );
+                      })
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={`h-5 w-5 text-gray-400 transition-transform ${
+                      isCategoryDropdownOpen ? "transform rotate-180" : ""
+                    }`}
+                  />
+                </div>
+
+                {isCategoryDropdownOpen && (
+                  <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-hidden">
+                    <div className="p-2 border-b border-gray-200">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search categories..."
+                          value={categorySearchTerm}
+                          onChange={(e) => {
+                            setCategorySearchTerm(e.target.value);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+                    <div className="overflow-y-auto max-h-48">
+                      {filteredCategories.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-gray-500">
+                          No categories found
+                        </div>
+                      ) : (
+                        filteredCategories.map((category) => {
+                          const isSelected = formData.categories.includes(
+                            category.id
+                          );
+                          return (
+                            <div
+                              key={category.id}
+                              onClick={() =>
+                                handleCategoryChange(category.id, !isSelected)
+                              }
+                              className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer transition-colors"
+                            >
+                              <div className="flex items-center flex-1">
+                                <div
+                                  className={`w-4 h-4 border-2 rounded mr-3 flex items-center justify-center ${
+                                    isSelected
+                                      ? "bg-blue-600 border-blue-600"
+                                      : "border-gray-300"
+                                  }`}
+                                >
+                                  {isSelected && (
+                                    <Check className="h-3 w-3 text-white" />
+                                  )}
+                                </div>
+                                <span className="text-sm font-medium text-gray-700">
+                                  {category.name}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               {errors.categories && (
                 <p className="mt-2 text-sm text-red-600">{errors.categories}</p>
