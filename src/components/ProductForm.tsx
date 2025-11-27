@@ -37,12 +37,23 @@ const ProductForm: React.FC<ProductFormProps> = ({
     inventory: [],
     imageIds: [],
   });
+  const [originalProduct, setOriginalProduct] = useState<Product | null>(null);
+  const [originalInventory, setOriginalInventory] = useState<Array<{
+    godownId: number;
+    quantity: number;
+  }>>([]);
 
   useEffect(() => {
     if (jwt) {
       loadData();
     }
     if (product) {
+      const initialInventory = product.inventory.map((inv) => ({
+        godownId: inv.godown.id,
+        quantity: inv.quantity,
+      }));
+      setOriginalProduct(product);
+      setOriginalInventory(initialInventory);
       setFormData({
         name: product.name,
         minimum_selling_price: product.minimumSellingPrice || 0,
@@ -52,10 +63,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         car_name: "",
         part_no: "",
         categories: product.categories.map((cat) => cat.id),
-        inventory: product.inventory.map((inv) => ({
-          godownId: inv.godown.id,
-          quantity: inv.quantity,
-        })),
+        inventory: initialInventory,
         imageIds: [],
       });
     }
@@ -116,11 +124,63 @@ const ProductForm: React.FC<ProductFormProps> = ({
 
     try {
       setLoading(true);
-      if (product) {
-        await productService.updateProduct(jwt, product.id, formData);
+      if (product && originalProduct) {
+        // Check if product fields have changed (excluding inventory)
+        const productFieldsChanged = 
+          formData.name !== originalProduct.name ||
+          formData.minimum_selling_price !== (originalProduct.minimumSellingPrice || 0) ||
+          formData.purchase_price !== (originalProduct.purchasePrice || 0) ||
+          formData.description !== (originalProduct.description || "") ||
+          formData.brand !== (originalProduct.brand || "") ||
+          JSON.stringify(formData.categories.sort()) !== JSON.stringify(originalProduct.categories.map(c => c.id).sort());
+
+        // Check inventory changes by comparing each godown individually
+        // Compare all godowns to detect any changes
+        const inventoryUpdates: Array<{ godownId: number; quantity: number }> = [];
+        let inventoryChanged = false;
+
+        // Check all godowns (from the godowns list) to ensure we catch all changes
+        if (godowns.length > 0) {
+          for (const godown of godowns) {
+            const godownId = godown.id;
+            const currentInv = formData.inventory.find(inv => inv.godownId === godownId);
+            const originalInv = originalInventory.find(oi => oi.godownId === godownId);
+            const currentQuantity = currentInv?.quantity || 0;
+            const originalQuantity = originalInv?.quantity || 0;
+
+            // If quantity changed, add to updates
+            if (currentQuantity !== originalQuantity) {
+              inventoryChanged = true;
+              inventoryUpdates.push({
+                godownId: godownId,
+                quantity: currentQuantity,
+              });
+            }
+          }
+        }
+
+        // Update inventory if changed
+        if (inventoryChanged && inventoryUpdates.length > 0) {
+          for (const update of inventoryUpdates) {
+            await productService.updateInventory(jwt, {
+              productId: product.id,
+              godownId: update.godownId,
+              quantity: update.quantity,
+            });
+          }
+        }
+
+        // Update product fields if changed (without inventory field)
+        if (productFieldsChanged) {
+          const { inventory, ...productData } = formData;
+          await productService.updateProduct(jwt, product.id, productData);
+        }
       } else {
+        // Create new product
         await productService.createProduct(jwt, formData);
       }
+      
+      // Reload data after updates
       onSuccess();
       onClose();
     } catch (error) {

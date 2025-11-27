@@ -512,7 +512,7 @@ const ProductTable: React.FC<ProductTableProps> = ({
       <StatsDashboard products={products} />
 
       {/* Filters */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 relative z-20">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -535,24 +535,6 @@ const ProductTable: React.FC<ProductTableProps> = ({
               Filter by Category
             </label>
             <div className="relative" ref={categoryFilterRef}>
-              <div
-                onClick={() => setIsCategoryFilterOpen(!isCategoryFilterOpen)}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 cursor-pointer flex items-center justify-between"
-              >
-                <span className="text-sm text-gray-700">
-                  {selectedCategory
-                    ? categories.find(
-                        (c) => c.id.toString() === selectedCategory
-                      )?.name || "All Categories"
-                    : "All Categories"}
-                </span>
-                <ChevronDown
-                  className={`h-4 w-4 text-gray-400 transition-transform ${
-                    isCategoryFilterOpen ? "transform rotate-180" : ""
-                  }`}
-                />
-              </div>
-
               {isCategoryFilterOpen && (
                 <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-hidden">
                   <div className="p-2 border-b border-gray-200">
@@ -640,6 +622,23 @@ const ProductTable: React.FC<ProductTableProps> = ({
                   </div>
                 </div>
               )}
+              <div
+                onClick={() => setIsCategoryFilterOpen(!isCategoryFilterOpen)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 cursor-pointer flex items-center justify-between"
+              >
+                <span className="text-sm text-gray-700">
+                  {selectedCategory
+                    ? categories.find(
+                        (c) => c.id.toString() === selectedCategory
+                      )?.name || "All Categories"
+                    : "All Categories"}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-gray-400 transition-transform ${
+                    isCategoryFilterOpen ? "transform rotate-180" : ""
+                  }`}
+                />
+              </div>
             </div>
           </div>
 
@@ -674,7 +673,7 @@ const ProductTable: React.FC<ProductTableProps> = ({
       </div>
 
       {/* Products Table */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden relative">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200/50">
             <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
