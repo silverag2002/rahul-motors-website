@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Product,
   Category,
@@ -23,6 +26,8 @@ import {
   X,
   ChevronDown,
   Check,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 import StatsDashboard from "./StatsDashboard";
 
@@ -46,10 +51,14 @@ const ProductTable: React.FC<ProductTableProps> = ({
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [inventoryData, setInventoryData] = useState<UpdateInventoryData[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set());
+  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(
+    new Set()
+  );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRemoveGodownModal, setShowRemoveGodownModal] = useState(false);
-  const [selectedGodownsForRemoval, setSelectedGodownsForRemoval] = useState<Set<number>>(new Set());
+  const [selectedGodownsForRemoval, setSelectedGodownsForRemoval] = useState<
+    Set<number>
+  >(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRemovingGodown, setIsRemovingGodown] = useState(false);
   const [categoryFilterSearch, setCategoryFilterSearch] = useState("");
@@ -205,12 +214,17 @@ const ProductTable: React.FC<ProductTableProps> = ({
   };
 
   const handleRemoveGodowns = async () => {
-    if (!jwt || selectedProducts.size === 0 || selectedGodownsForRemoval.size === 0) return;
+    if (
+      !jwt ||
+      selectedProducts.size === 0 ||
+      selectedGodownsForRemoval.size === 0
+    )
+      return;
 
     try {
       setIsRemovingGodown(true);
       const removePromises: Promise<void>[] = [];
-      
+
       selectedProducts.forEach((productId) => {
         selectedGodownsForRemoval.forEach((godownId) => {
           removePromises.push(
@@ -240,8 +254,167 @@ const ProductTable: React.FC<ProductTableProps> = ({
     setShowRemoveGodownModal(true);
   };
 
+  const prepareExportData = () => {
+    return filteredProducts.map((product) => {
+      const categoriesList =
+        product.categories.map((cat) => cat.name).join(", ") || "N/A";
+      const inventoryBreakdown =
+        product.inventory
+          .map((inv) => `${inv.godown.name}: ${inv.quantity}`)
+          .join("; ") || "No inventory";
+      const totalInventory = getTotalInventory(product);
+
+      return {
+        "Product ID": product.id,
+        "Product Name": product.name,
+        Brand: product.brand || "N/A",
+        Description: product.description || "N/A",
+        Categories: categoriesList,
+        "Minimum Selling Price": product.minimumSellingPrice || 0,
+        "Purchase Price": product.purchasePrice || 0,
+        "Total Inventory": totalInventory,
+        "Inventory Breakdown": inventoryBreakdown,
+        "Number of Images": product.images.length,
+      };
+    });
+  };
+
+  const handleExportToExcel = () => {
+    const data = prepareExportData();
+
+    if (data.length === 0) {
+      alert(
+        "No data to export. Please apply filters or ensure products exist."
+      );
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    ws["!cols"] = [
+      { wch: 10 },
+      { wch: 30 },
+      { wch: 20 },
+      { wch: 40 },
+      { wch: 30 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 50 },
+      { wch: 15 },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    const timestamp = new Date().toISOString().split("T")[0];
+    XLSX.writeFile(wb, `products_export_${timestamp}.xlsx`);
+  };
+
+  const handleExportToPDF = () => {
+    const data = prepareExportData();
+
+    if (data.length === 0) {
+      alert(
+        "No data to export. Please apply filters or ensure products exist."
+      );
+      return;
+    }
+
+    const doc = new jsPDF("landscape", "pt", "a4");
+    const pagePadding = 36;
+
+    doc.setFontSize(16);
+    doc.text("Products Export", pagePadding, 32);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Exported on: ${new Date().toLocaleString()}`, pagePadding, 48);
+
+    let yPosition = 64;
+    if (searchTerm || selectedCategory || selectedGodown) {
+      const filterInfo: string[] = [];
+      if (searchTerm) filterInfo.push(`Search: ${searchTerm}`);
+      if (selectedCategory) {
+        const catName =
+          categories.find((c) => c.id.toString() === selectedCategory)?.name ||
+          selectedCategory;
+        filterInfo.push(`Category: ${catName}`);
+      }
+      if (selectedGodown) {
+        const godownName =
+          godowns.find((g) => g.id.toString() === selectedGodown)?.name ||
+          selectedGodown;
+        filterInfo.push(`Godown: ${godownName}`);
+      }
+      doc.text(`Filters: ${filterInfo.join(", ")}`, pagePadding, yPosition);
+      yPosition += 16;
+    }
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+
+    const tableData = data.map((row) => [
+      row["Product ID"],
+      row["Product Name"],
+      row["Brand"],
+      row["Categories"],
+      `${row["Minimum Selling Price"]}`,
+      `${row["Purchase Price"]}`,
+      row["Total Inventory"],
+      row["Inventory Breakdown"],
+    ]);
+
+    autoTable(doc, {
+      startY: yPosition,
+      head: [
+        [
+          "ID",
+          "Product Name",
+          "Brand",
+          "Categories",
+          "Min Price",
+          "Purchase Price",
+          "Total Qty",
+          "Inventory Breakdown",
+        ],
+      ],
+      body: tableData,
+      styles: {
+        fontSize: 8,
+        cellPadding: 3,
+        overflow: "linebreak",
+        halign: "left",
+      },
+      headStyles: {
+        fillColor: [59, 130, 246],
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 140 },
+        2: { cellWidth: 90 },
+        3: { cellWidth: 150 },
+        4: { cellWidth: 50 },
+        5: { cellWidth: 50 },
+        6: { cellWidth: 50 },
+        7: { cellWidth: 220 },
+      },
+      tableWidth: "auto",
+      margin: { left: pagePadding, right: pagePadding },
+    });
+
+    const timestamp = new Date().toISOString().split("T")[0];
+    doc.save(`products_export_${timestamp}.pdf`);
+  };
+
   const getAvailableGodownsWithQuantities = () => {
-    const godownQuantities = new Map<number, { godown: Godown; totalQuantity: number }>();
+    const godownQuantities = new Map<
+      number,
+      { godown: Godown; totalQuantity: number }
+    >();
 
     // Calculate total quantity for each godown across selected products
     filteredProducts
@@ -288,7 +461,25 @@ const ProductTable: React.FC<ProductTableProps> = ({
             Manage your inventory and product catalog
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportToExcel}
+              className="flex items-center px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-lg hover:shadow-xl font-medium text-sm"
+              title="Export to Excel"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export Excel
+            </button>
+            <button
+              onClick={handleExportToPDF}
+              className="flex items-center px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl hover:from-red-700 hover:to-rose-700 transition-all duration-200 shadow-lg hover:shadow-xl font-medium text-sm"
+              title="Export to PDF"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Export PDF
+            </button>
+          </div>
           {selectedProducts.size > 0 && (
             <>
               <button
@@ -532,7 +723,9 @@ const ProductTable: React.FC<ProductTableProps> = ({
                     <input
                       type="checkbox"
                       checked={selectedProducts.has(product.id)}
-                      onChange={(e) => handleSelectProduct(product.id, e.target.checked)}
+                      onChange={(e) =>
+                        handleSelectProduct(product.id, e.target.checked)
+                      }
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                   </td>
@@ -589,7 +782,10 @@ const ProductTable: React.FC<ProductTableProps> = ({
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td
+                    className="px-6 py-4 whitespace-nowrap"
+                    onClick={() => handleEditInventory(product)}
+                  >
                     <div
                       className="text-sm font-semibold text-blue-600 cursor-pointer hover:text-blue-800 transition-colors"
                       title={getInventoryBreakdown(product)}
@@ -729,11 +925,13 @@ const ProductTable: React.FC<ProductTableProps> = ({
 
               <div className="mb-6">
                 <p className="text-gray-700 mb-3">
-                  Are you sure you want to delete {selectedProducts.size} product(s)?
+                  Are you sure you want to delete {selectedProducts.size}{" "}
+                  product(s)?
                 </p>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                   <p className="text-sm text-red-800 font-medium">
-                    ⚠️ Warning: This will permanently delete the selected products and all associated data.
+                    ⚠️ Warning: This will permanently delete the selected
+                    products and all associated data.
                   </p>
                 </div>
               </div>
@@ -781,7 +979,8 @@ const ProductTable: React.FC<ProductTableProps> = ({
                       Remove Godown from Products
                     </h3>
                     <p className="text-sm text-gray-500">
-                      Select godowns to remove from {selectedProducts.size} selected product(s)
+                      Select godowns to remove from {selectedProducts.size}{" "}
+                      selected product(s)
                     </p>
                   </div>
                 </div>
@@ -809,37 +1008,41 @@ const ProductTable: React.FC<ProductTableProps> = ({
                 ) : (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 bg-gray-50 rounded-xl">
-                      {getAvailableGodownsWithQuantities().map(({ godown, totalQuantity }) => (
-                        <label
-                          key={godown.id}
-                          className="flex items-center justify-between p-3 bg-white rounded-xl hover:bg-gray-100 cursor-pointer transition-colors duration-200 border border-gray-200"
-                        >
-                          <div className="flex items-center flex-1">
-                            <input
-                              type="checkbox"
-                              checked={selectedGodownsForRemoval.has(godown.id)}
-                              onChange={(e) => {
-                                setSelectedGodownsForRemoval((prev) => {
-                                  const newSet = new Set(prev);
-                                  if (e.target.checked) {
-                                    newSet.add(godown.id);
-                                  } else {
-                                    newSet.delete(godown.id);
-                                  }
-                                  return newSet;
-                                });
-                              }}
-                              className="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
-                            />
-                            <span className="text-sm font-medium text-gray-700">
-                              {godown.name}
+                      {getAvailableGodownsWithQuantities().map(
+                        ({ godown, totalQuantity }) => (
+                          <label
+                            key={godown.id}
+                            className="flex items-center justify-between p-3 bg-white rounded-xl hover:bg-gray-100 cursor-pointer transition-colors duration-200 border border-gray-200"
+                          >
+                            <div className="flex items-center flex-1">
+                              <input
+                                type="checkbox"
+                                checked={selectedGodownsForRemoval.has(
+                                  godown.id
+                                )}
+                                onChange={(e) => {
+                                  setSelectedGodownsForRemoval((prev) => {
+                                    const newSet = new Set(prev);
+                                    if (e.target.checked) {
+                                      newSet.add(godown.id);
+                                    } else {
+                                      newSet.delete(godown.id);
+                                    }
+                                    return newSet;
+                                  });
+                                }}
+                                className="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                              />
+                              <span className="text-sm font-medium text-gray-700">
+                                {godown.name}
+                              </span>
+                            </div>
+                            <span className="text-sm font-semibold text-blue-600 ml-3 px-2 py-1 bg-blue-50 rounded-lg">
+                              Qty: {totalQuantity}
                             </span>
-                          </div>
-                          <span className="text-sm font-semibold text-blue-600 ml-3 px-2 py-1 bg-blue-50 rounded-lg">
-                            Qty: {totalQuantity}
-                          </span>
-                        </label>
-                      ))}
+                          </label>
+                        )
+                      )}
                     </div>
                     {selectedGodownsForRemoval.size === 0 && (
                       <p className="mt-2 text-sm text-red-600">
@@ -852,8 +1055,9 @@ const ProductTable: React.FC<ProductTableProps> = ({
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This will remove the selected godown(s) from all {selectedProducts.size} selected product(s). 
-                  This action cannot be undone.
+                  <strong>Note:</strong> This will remove the selected godown(s)
+                  from all {selectedProducts.size} selected product(s). This
+                  action cannot be undone.
                 </p>
               </div>
 
