@@ -8,16 +8,62 @@ import {
   Godown,
   CreateProductData,
   UpdateInventoryData,
+  AuditLog,
+  ExportOptions,
+  PaginatedResult,
+  SearchParams,
+  AdminUser,
+  CreateUserData,
+  UpdateUserData,
 } from "../types";
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
+const api = axios.create({ baseURL: API_BASE_URL });
+
+const authHeader = (jwt: string) => ({ Authorization: `Bearer ${jwt}` });
+
+function mapProduct(json: any): Product {
+  return {
+    id: json.id,
+    name: json.name || "",
+    description: json.description,
+    brand: json.brand,
+    carName: json.car_name,
+    partNo: json.part_no,
+    minimumSellingPrice: json.minimum_selling_price
+      ? Number(json.minimum_selling_price)
+      : undefined,
+    purchasePrice: json.purchase_price
+      ? Number(json.purchase_price)
+      : undefined,
+    images: (json.images || []).map((img: any) => ({
+      url: img.url,
+      thumbnailUrl: img.formats?.thumbnail?.url,
+    })),
+    inventory: (json.inventory || []).map((inv: any) => ({
+      id: inv.id,
+      quantity: inv.quantity || 0,
+      godown: { id: inv.godown?.id, name: inv.godown?.name || "", location: inv.godown?.location },
+    })),
+    categories: (json.categories || []).map((cat: any) => ({
+      id: cat.id,
+      documentId: cat.documentId || "",
+      name: cat.name || "",
+      imageUrl: cat.image?.formats?.medium?.url || cat.image?.url,
+    })),
+  };
+}
 
 // Auth Service
 export const authService = {
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     const response = await api.post("/auth/login-user", credentials);
+    return response.data;
+  },
+  async sendOtp(email: string): Promise<void> {
+    await api.post("/auth/send-otp", { email });
+  },
+  async verifyOtpLogin(email: string, otp: string): Promise<AuthResponse> {
+    const response = await api.post("/auth/verify-otp-login", { email, otp });
     return response.data;
   },
 };
@@ -26,235 +72,108 @@ export const authService = {
 export const productService = {
   async searchProducts(
     jwt: string,
-    params?: {
-      name?: string;
-      category?: string;
-      brand?: string;
-      godownId?: number;
-    }
-  ): Promise<Product[]> {
+    params?: SearchParams
+  ): Promise<PaginatedResult<Product>> {
     const response = await api.get("/search/products", {
-      params,
-      headers: { Authorization: `Bearer ${jwt}` },
+      params: {
+        ...params,
+        page: params?.page || 1,
+        pageSize: params?.pageSize || 25,
+      },
+      headers: authHeader(jwt),
     });
-    return response.data.data.map((json: any) => ({
-      id: json.id,
-      name: json.name || "",
-      description: json.description,
-      brand: json.brand,
-      minimumSellingPrice: json.minimum_selling_price
-        ? Number(json.minimum_selling_price)
-        : undefined,
-      purchasePrice: json.purchase_price
-        ? Number(json.purchase_price)
-        : undefined,
-      images: json.images
-        ? json.images.map((img: any) => ({
-            url: img.url,
-            thumbnailUrl: img.formats?.thumbnail?.url,
-          }))
-        : [],
-      inventory: json.inventory
-        ? json.inventory.map((inv: any) => ({
-            id: inv.id,
-            quantity: inv.quantity || 0,
-            godown: {
-              id: inv.godown.id,
-              name: inv.godown.name || "",
-              location: inv.godown.location,
-            },
-          }))
-        : [],
-      categories: json.categories
-        ? json.categories.map((cat: any) => ({
-            id: cat.id,
-            documentId: cat.documentId || "",
-            name: cat.name || "",
-            imageUrl: cat.image?.formats?.medium?.url || cat.image?.url,
-          }))
-        : [],
-    }));
+    const data = response.data.data.map(mapProduct);
+    const meta = response.data.meta;
+    return {
+      data,
+      meta: {
+        total: meta.total || data.length,
+        page: meta.page || 1,
+        pageSize: meta.pageSize || 25,
+        pageCount: meta.pageCount || 1,
+      },
+    };
   },
 
   async getProductDetails(jwt: string, productId: number): Promise<Product> {
     const response = await api.get(`/products/${productId}?populate=*`, {
-      headers: { Authorization: `Bearer ${jwt}` },
+      headers: authHeader(jwt),
     });
-    const json = response.data.data;
-    return {
-      id: json.id,
-      name: json.name || "",
-      description: json.description,
-      brand: json.brand,
-      minimumSellingPrice: json.minimum_selling_price
-        ? Number(json.minimum_selling_price)
-        : undefined,
-      purchasePrice: json.purchase_price
-        ? Number(json.purchase_price)
-        : undefined,
-      images: json.images
-        ? json.images.map((img: any) => ({
-            url: img.url,
-            thumbnailUrl: img.formats?.thumbnail?.url,
-          }))
-        : [],
-      inventory: json.inventory
-        ? json.inventory.map((inv: any) => ({
-            id: inv.id,
-            quantity: inv.quantity || 0,
-            godown: {
-              id: inv.godown.id,
-              name: inv.godown.name || "",
-              location: inv.godown.location,
-            },
-          }))
-        : [],
-      categories: json.categories
-        ? json.categories.map((cat: any) => ({
-            id: cat.id,
-            documentId: cat.documentId || "",
-            name: cat.name || "",
-            imageUrl: cat.image?.formats?.medium?.url || cat.image?.url,
-          }))
-        : [],
-    };
+    return mapProduct(response.data.data);
   },
 
-  async updateInventory(jwt: string, data: UpdateInventoryData): Promise<void> {
-    await api.put("/product/inventory", data, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-  },
-
-  async createProduct(jwt: string, data: CreateProductData) {
+  async createProduct(jwt: string, data: CreateProductData): Promise<Product> {
     const response = await api.post("/products", data, {
-      headers: { Authorization: `Bearer ${jwt}` },
+      headers: authHeader(jwt),
     });
-    const json = response.data.data;
-
-    console.log("Created Product Response:", json);
-
-    console.log("AFTER ADJUSTMENT:", json);
-    return {
-      id: json.id,
-      name: json.name || "",
-      description: json.description,
-      brand: json.brand,
-      minimumSellingPrice: json.minimum_selling_price
-        ? Number(json.minimum_selling_price)
-        : undefined,
-      purchasePrice: json.purchase_price
-        ? Number(json.purchase_price)
-        : undefined,
-      images: json.images
-        ? json.images.map((img: any) => ({
-            url: img.url,
-            thumbnailUrl: img.formats?.thumbnail?.url,
-          }))
-        : [],
-      inventory: json.inventory
-        ? json.inventory.map((inv: any) => ({
-            id: inv.id,
-            quantity: inv.quantity || 0,
-            godown: {
-              id: inv.godown.id,
-              name: inv.godown.name || "",
-              location: inv.godown.location,
-            },
-          }))
-        : [],
-      categories: json.categories
-        ? json.categories.map((cat: any) => ({
-            id: cat.id,
-            documentId: cat.documentId || "",
-            name: cat.name || "",
-            imageUrl: cat.image?.formats?.medium?.url || cat.image?.url,
-          }))
-        : [],
-    };
+    return mapProduct(response.data.data);
   },
 
-  async updateProduct(
-    jwt: string,
-    productId: number,
-    data: Partial<CreateProductData>
-  ) {
+  async updateProduct(jwt: string, productId: number, data: Partial<CreateProductData>): Promise<Product> {
     const response = await api.put(`/products/${productId}`, data, {
-      headers: { Authorization: `Bearer ${jwt}` },
+      headers: authHeader(jwt),
     });
-    const json = response.data.data;
-
-    return {
-      id: json.id,
-      name: json.name || "",
-      description: json.description,
-      brand: json.brand,
-      minimumSellingPrice: json.minimum_selling_price
-        ? Number(json.minimum_selling_price)
-        : undefined,
-      purchasePrice: json.purchase_price
-        ? Number(json.purchase_price)
-        : undefined,
-      images: json.images
-        ? json.images.map((img: any) => ({
-            url: img.url,
-            thumbnailUrl: img.formats?.thumbnail?.url,
-          }))
-        : [],
-      inventory: json.inventory
-        ? json.inventory.map((inv: any) => ({
-            id: inv.id,
-            quantity: inv.quantity || 0,
-            godown: {
-              id: inv.godown.id,
-              name: inv.godown.name || "",
-              location: inv.godown.location,
-            },
-          }))
-        : [],
-      categories: json.categories
-        ? json.categories.map((cat: any) => ({
-            id: cat.id,
-            documentId: cat.documentId || "",
-            name: cat.name || "",
-            imageUrl: cat.image?.formats?.medium?.url || cat.image?.url,
-          }))
-        : [],
-    };
+    return mapProduct(response.data.data);
   },
 
   async deleteProduct(jwt: string, productId: number): Promise<void> {
-    await api.delete(`/products/${productId}`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
+    await api.delete(`/products/${productId}`, { headers: authHeader(jwt) });
   },
 
-  async removeGodownFromProduct(
-    jwt: string,
-    productId: number,
-    godownId: number
-  ): Promise<void> {
-    await api.post(
-      "/products/godown",
-      { productId, godownId },
-      {
-        headers: { Authorization: `Bearer ${jwt}` },
-      }
-    );
+  async updateInventory(jwt: string, data: UpdateInventoryData): Promise<void> {
+    await api.put("/product/inventory", data, { headers: authHeader(jwt) });
+  },
+
+  async bulkZeroQuantity(jwt: string, productIds: number[]): Promise<void> {
+    await api.post("/products/bulk-zero-quantity", { productIds }, { headers: authHeader(jwt) });
+  },
+
+  async getBrands(jwt: string): Promise<string[]> {
+    const response = await api.get("/brands", { headers: authHeader(jwt) });
+    return response.data.data || [];
+  },
+
+  async exportProducts(jwt: string, options: ExportOptions): Promise<Blob | { message: string }> {
+    const params: Record<string, string> = {
+      fields: options.fields.join(","),
+      format: options.format,
+    };
+    if (options.email) params.email = options.email;
+
+    if (options.email) {
+      const response = await api.get("/products/export", {
+        params,
+        headers: authHeader(jwt),
+      });
+      return response.data;
+    }
+
+    const response = await api.get("/products/export", {
+      params,
+      headers: authHeader(jwt),
+      responseType: "blob",
+    });
+    return response.data as Blob;
+  },
+
+  async linkGodownToProduct(jwt: string, productId: number, godownId: number, quantity: number): Promise<Product> {
+    const response = await api.post("/products/link-godown", { productId, godownId, quantity }, { headers: authHeader(jwt) });
+    return mapProduct(response.data.data);
+  },
+
+  async removeGodownFromProduct(jwt: string, productId: number, godownId: number): Promise<Product> {
+    const response = await api.post("/products/godown", { productId, godownId }, { headers: authHeader(jwt) });
+    return mapProduct(response.data.data);
   },
 };
 
 // Category Service
 export const categoryService = {
-  async fetchCategories(jwt: string, godownId?: number): Promise<Category[]> {
-    const params = godownId ? { godown: godownId.toString() } : {};
+  async fetchCategories(jwt: string): Promise<Category[]> {
     const response = await api.get("/categories", {
-      params,
       headers: {
-        Authorization: `Bearer ${jwt}`,
+        ...authHeader(jwt),
         "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
       },
     });
     return response.data.data.map((json: any) => ({
@@ -265,52 +184,35 @@ export const categoryService = {
     }));
   },
 
-  async createCategory(
-    jwt: string,
-    name: string,
-    imageId?: number
-  ): Promise<Category> {
+  async createCategory(jwt: string, name: string, imageId?: number): Promise<Category> {
     const response = await api.post(
       "/categories",
       { name, ...(imageId && { imageId }) },
-      { headers: { Authorization: `Bearer ${jwt}` } }
+      { headers: authHeader(jwt) }
     );
     const json = response.data.data;
-    return {
-      id: json.id,
-      documentId: json.documentId || "",
-      name: json.name || "",
-      imageUrl: json.image?.formats?.medium?.url || json.image?.url,
-    };
+    return { id: json.id, documentId: json.documentId || "", name: json.name || "", imageUrl: json.image?.url };
   },
 
-  async updateCategory(
-    jwt: string,
-    categoryId: number,
-    name: string,
-    imageId?: number
-  ): Promise<Category> {
+  async updateCategory(jwt: string, categoryId: number, name: string, imageId?: number): Promise<Category> {
     const response = await api.put(
       `/categories/${categoryId}`,
       { name, ...(imageId && { imageId }) },
-      { headers: { Authorization: `Bearer ${jwt}` } }
+      { headers: authHeader(jwt) }
     );
     const json = response.data.data;
-    return {
-      id: json.id,
-      documentId: json.documentId || "",
-      name: json.name || "",
-      imageUrl: json.image?.formats?.medium?.url || json.image?.url,
-    };
+    return { id: json.id, documentId: json.documentId || "", name: json.name || "", imageUrl: json.image?.url };
+  },
+
+  async deleteCategory(jwt: string, categoryId: number): Promise<void> {
+    await api.delete(`/categories/${categoryId}`, { headers: authHeader(jwt) });
   },
 };
 
 // Godown Service
 export const godownService = {
   async fetchGodowns(jwt: string): Promise<Godown[]> {
-    const response = await api.get("/godown", {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
+    const response = await api.get("/godown", { headers: authHeader(jwt) });
     return response.data.data.map((json: any) => ({
       id: json.id,
       name: json.name || "",
@@ -318,40 +220,99 @@ export const godownService = {
     }));
   },
 
-  async createGodown(
-    jwt: string,
-    name: string,
-    location?: string
-  ): Promise<Godown> {
+  async createGodown(jwt: string, name: string, location?: string): Promise<Godown> {
     const response = await api.post(
       "/godown",
       { name, ...(location && { location }) },
-      { headers: { Authorization: `Bearer ${jwt}` } }
+      { headers: authHeader(jwt) }
     );
     const json = response.data.data;
-    return {
-      id: json.id,
-      name: json.name || "",
-      location: json.location,
-    };
+    return { id: json.id, name: json.name || "", location: json.location };
   },
 
-  async updateGodown(
-    jwt: string,
-    godownId: number,
-    name: string,
-    location?: string
-  ): Promise<Godown> {
+  async updateGodown(jwt: string, godownId: number, name: string, location?: string): Promise<Godown> {
     const response = await api.put(
       `/godown/${godownId}`,
       { name, ...(location && { location }) },
-      { headers: { Authorization: `Bearer ${jwt}` } }
+      { headers: authHeader(jwt) }
     );
     const json = response.data.data;
+    return { id: json.id, name: json.name || "", location: json.location };
+  },
+
+  async deleteGodown(jwt: string, godownId: number): Promise<void> {
+    await api.delete(`/godowns/${godownId}`, { headers: authHeader(jwt) });
+  },
+};
+
+// User Management Service
+export const userService = {
+  async listUsers(
+    jwt: string,
+    params?: { search?: string; user_type?: string; page?: number; pageSize?: number }
+  ): Promise<PaginatedResult<AdminUser>> {
+    const response = await api.get("/admin/users", {
+      params: { ...params, page: params?.page || 1, pageSize: params?.pageSize || 20 },
+      headers: authHeader(jwt),
+    });
+    const { data, meta } = response.data;
     return {
-      id: json.id,
-      name: json.name || "",
-      location: json.location,
+      data: data as AdminUser[],
+      meta: { total: meta.total, page: meta.page, pageSize: meta.pageSize, pageCount: meta.pageCount },
+    };
+  },
+
+  async createUser(jwt: string, data: CreateUserData): Promise<AdminUser> {
+    const response = await api.post("/admin/users", data, { headers: authHeader(jwt) });
+    return response.data.data as AdminUser;
+  },
+
+  async updateUser(jwt: string, userId: number, data: UpdateUserData): Promise<AdminUser> {
+    const response = await api.put(`/admin/users/${userId}`, data, { headers: authHeader(jwt) });
+    return response.data.data as AdminUser;
+  },
+
+  async changePassword(jwt: string, userId: number, password: string): Promise<void> {
+    await api.put(`/admin/users/${userId}/password`, { password }, { headers: authHeader(jwt) });
+  },
+
+  async toggleBlock(jwt: string, userId: number): Promise<AdminUser> {
+    const response = await api.put(`/admin/users/${userId}/toggle-block`, {}, { headers: authHeader(jwt) });
+    return response.data.data as AdminUser;
+  },
+
+  async deleteUser(jwt: string, userId: number): Promise<void> {
+    await api.delete(`/admin/users/${userId}`, { headers: authHeader(jwt) });
+  },
+};
+
+// Audit Log Service
+export const auditLogService = {
+  async getAuditLogs(
+    jwt: string,
+    params?: {
+      action?: string;
+      productId?: number;
+      dateFrom?: string;
+      dateTo?: string;
+      page?: number;
+      pageSize?: number;
+    }
+  ): Promise<PaginatedResult<AuditLog>> {
+    const response = await api.get("/audit-logs", {
+      params: { ...params, page: params?.page || 1, pageSize: params?.pageSize || 50 },
+      headers: authHeader(jwt),
+    });
+    const data = response.data.data as AuditLog[];
+    const meta = response.data.meta;
+    return {
+      data,
+      meta: {
+        total: meta.total || data.length,
+        page: meta.page || 1,
+        pageSize: meta.pageSize || 50,
+        pageCount: meta.pageCount || 1,
+      },
     };
   },
 };

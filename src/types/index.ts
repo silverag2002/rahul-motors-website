@@ -2,6 +2,7 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  name?: string;
   confirmed: boolean;
   blocked: boolean;
   createdAt: string;
@@ -37,11 +38,26 @@ export interface Product {
   name: string;
   description?: string;
   brand?: string;
+  carName?: string;
+  partNo?: string;
   minimumSellingPrice?: number;
   purchasePrice?: number;
   images: ProductImage[];
   inventory: Inventory[];
   categories: Category[];
+}
+
+export interface AuditLog {
+  id: number;
+  action: string;
+  description?: string;
+  quantity?: number;
+  createdAt: string;
+  date_time?: string;
+  product?: { id: number; name: string; brand?: string };
+  user?: { id: number; email: string; name?: string; username?: string };
+  godown?: { id: number; name: string };
+  category?: { id: number; name: string };
 }
 
 export interface AuthResponse {
@@ -56,12 +72,12 @@ export interface LoginCredentials {
 
 export interface CreateProductData {
   name: string;
-  minimum_selling_price: number;
-  purchase_price: number;
-  description: string;
-  brand: string;
-  car_name: string;
-  part_no: string;
+  minimum_selling_price?: number;
+  purchase_price?: number;
+  description?: string;
+  brand?: string;
+  car_name?: string;
+  part_no?: string;
   categories: number[];
   inventory: Array<{
     godownId: number;
@@ -74,4 +90,58 @@ export interface UpdateInventoryData {
   productId: number;
   quantity: number;
   godownId: number;
+}
+
+export interface ExportOptions {
+  fields: string[];
+  format: "pdf" | "excel";
+  email?: string;
+}
+
+export interface SearchParams {
+  name?: string;
+  brand?: string;
+  category?: string;
+  categoryId?: number;
+  godownId?: number;
+  partNo?: string;
+  minQuantity?: number;
+  maxQuantity?: number;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  email: string;
+  confirmed: boolean;
+  blocked: boolean;
+  user_type: "super_admin" | "admin" | "user";
+  createdAt: string;
+}
+
+export interface CreateUserData {
+  username: string;
+  email: string;
+  password: string;
+  user_type: "super_admin" | "admin" | "user";
+  confirmed: boolean;
+}
+
+export interface UpdateUserData {
+  username?: string;
+  email?: string;
+  user_type?: "super_admin" | "admin" | "user";
+  confirmed?: boolean;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  meta: {
+    total: number;
+    page: number;
+    pageSize: number;
+    pageCount: number;
+  };
 }
