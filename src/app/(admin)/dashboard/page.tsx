@@ -5,7 +5,8 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { productService, auditLogService } from "../../../lib/api";
 import { Product, AuditLog } from "../../../types";
 import StatsCards from "../../../components/dashboard/StatsCards";
-import { formatDate, getTotalInventory } from "../../../lib/utils";
+import { formatDate, formatDisplayLabel, getTotalInventory } from "../../../lib/utils";
+import { formatAuditQuantitySummary, getAuditLogCategoryName } from "../../../lib/auditLogDisplay";
 import { ACTION_COLORS } from "../../../lib/constants";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -59,7 +60,7 @@ export default function DashboardPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-red-800">{zeroStockProducts.length} product(s) out of stock</p>
                 <p className="text-xs text-red-600 mt-0.5 truncate">
-                  {zeroStockProducts.slice(0, 3).map(p => p.name).join(", ")}{zeroStockProducts.length > 3 ? "..." : ""}
+                  {zeroStockProducts.slice(0, 3).map(p => formatDisplayLabel(p.name)).join(", ")}{zeroStockProducts.length > 3 ? "..." : ""}
                 </p>
                 <Link
                   href="/products?maxQuantity=0"
@@ -93,7 +94,7 @@ export default function DashboardPage() {
                 </div>
                 {lowStockProducts.length > 0 && (
                   <p className="text-xs text-amber-600 mt-0.5 truncate">
-                    {lowStockProducts.slice(0, 3).map(p => p.name).join(", ")}{lowStockProducts.length > 3 ? "..." : ""}
+                    {lowStockProducts.slice(0, 3).map(p => formatDisplayLabel(p.name)).join(", ")}{lowStockProducts.length > 3 ? "..." : ""}
                   </p>
                 )}
                 <Link
@@ -132,7 +133,9 @@ export default function DashboardPage() {
           <div className="p-8 text-center text-gray-400 text-sm">No activity recorded yet</div>
         ) : (
           <div className="divide-y divide-gray-50">
-            {logs.map((log) => (
+            {logs.map((log) => {
+              const categoryName = getAuditLogCategoryName(log);
+              return (
               <div key={log.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition">
                 <span
                   className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${
@@ -142,19 +145,35 @@ export default function DashboardPage() {
                   {log.action.replace("PRODUCT ", "").replace("CATEGORY ", "")}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-700 truncate">
-                    {log.product?.name && <span className="font-medium">{log.product.name}</span>}
-                    {log.description && !log.product?.name && <span>{log.description}</span>}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {log.product?.name && (
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {formatDisplayLabel(log.product.name)}
+                      </p>
+                    )}
+                    {categoryName && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                        {formatDisplayLabel(categoryName)}
+                      </span>
+                    )}
+                    {log.description && !log.product?.name && (
+                      <span className="text-sm text-gray-700">{log.description}</span>
+                    )}
+                  </div>
                   {log.user && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-400 mt-0.5">
                       by {log.user.name || log.user.email}
+                      {log.godown?.name ? ` · ${formatDisplayLabel(log.godown.name)}` : ""}
                     </p>
                   )}
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {formatAuditQuantitySummary(log)}
+                  </p>
                 </div>
                 <p className="text-xs text-gray-400 shrink-0">{formatDate(log.createdAt)}</p>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

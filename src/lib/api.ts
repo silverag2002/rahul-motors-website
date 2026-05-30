@@ -7,6 +7,7 @@ import {
   Category,
   Godown,
   CreateProductData,
+  UpdateProductData,
   UpdateInventoryData,
   AuditLog,
   ExportOptions,
@@ -29,12 +30,14 @@ function mapProduct(json: any): Product {
     brand: json.brand,
     carName: json.car_name,
     partNo: json.part_no,
-    minimumSellingPrice: json.minimum_selling_price
-      ? Number(json.minimum_selling_price)
-      : undefined,
-    purchasePrice: json.purchase_price
-      ? Number(json.purchase_price)
-      : undefined,
+    minimumSellingPrice:
+      json.minimum_selling_price != null && json.minimum_selling_price !== ""
+        ? Number(json.minimum_selling_price)
+        : undefined,
+    purchasePrice:
+      json.purchase_price != null && json.purchase_price !== ""
+        ? Number(json.purchase_price)
+        : undefined,
     images: (json.images || []).map((img: any) => ({
       url: img.url,
       thumbnailUrl: img.formats?.thumbnail?.url,
@@ -109,7 +112,7 @@ export const productService = {
     return mapProduct(response.data.data);
   },
 
-  async updateProduct(jwt: string, productId: number, data: Partial<CreateProductData>): Promise<Product> {
+  async updateProduct(jwt: string, productId: number, data: UpdateProductData): Promise<Product> {
     const response = await api.put(`/products/${productId}`, data, {
       headers: authHeader(jwt),
     });
@@ -163,6 +166,18 @@ export const productService = {
 
   async removeGodownFromProduct(jwt: string, productId: number, godownId: number): Promise<Product> {
     const response = await api.post("/products/godown", { productId, godownId }, { headers: authHeader(jwt) });
+    return mapProduct(response.data.data);
+  },
+
+  async transferGodown(
+    jwt: string,
+    data: { productId: number; fromGodownId: number; toGodownId: number; quantity?: number }
+  ): Promise<Product> {
+    const response = await api.post(
+      "/products/transfer-godown",
+      data,
+      { headers: authHeader(jwt) }
+    );
     return mapProduct(response.data.data);
   },
 };
@@ -303,7 +318,47 @@ export const auditLogService = {
       params: { ...params, page: params?.page || 1, pageSize: params?.pageSize || 50 },
       headers: authHeader(jwt),
     });
-    const data = response.data.data as AuditLog[];
+    const raw = response.data.data as Record<string, unknown>[];
+    const data: AuditLog[] = raw.map((log) => {
+      const productRaw = log.product as
+        | (AuditLog["product"] & { categories?: Array<{ id: number; name: string }> })
+        | undefined;
+      const directCategory = log.category as AuditLog["category"];
+      const categoryFromProduct = productRaw?.categories?.[0];
+      const category =
+        directCategory?.name != null
+          ? directCategory
+          : categoryFromProduct?.name != null
+            ? { id: categoryFromProduct.id, name: categoryFromProduct.name }
+            : directCategory;
+
+      const { categories: _categories, ...product } = productRaw ?? {};
+
+      return {
+        id: log.id as number,
+        action: log.action as string,
+        description: log.description as string | undefined,
+        quantity: (log.quantity as number | undefined) ?? undefined,
+        quantityChange:
+          (log.quantity_change as number | undefined) ??
+          (log.quantityChange as number | undefined),
+        previousQuantity:
+          (log.previous_quantity as number | undefined) ??
+          (log.previousQuantity as number | undefined),
+        newQuantity:
+          (log.new_quantity as number | undefined) ??
+          (log.newQuantity as number | undefined),
+        currentQuantity:
+          (log.current_quantity as number | undefined) ??
+          (log.currentQuantity as number | undefined),
+        createdAt: (log.createdAt as string) ?? (log.date_time as string),
+        date_time: log.date_time as string | undefined,
+        product: productRaw ? (product as AuditLog["product"]) : undefined,
+        user: log.user as AuditLog["user"],
+        godown: log.godown as AuditLog["godown"],
+        category,
+      };
+    });
     const meta = response.data.meta;
     return {
       data,

@@ -5,16 +5,17 @@ import { Product, Godown } from "../../types";
 import { productService } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "sonner";
-import { X, Loader2, Warehouse, Plus } from "lucide-react";
-import { getTotalInventory } from "../../lib/utils";
+import { X, Loader2, Warehouse, Plus, ArrowRightLeft } from "lucide-react";
+import { formatDisplayLabel, getTotalInventory } from "../../lib/utils";
 
 interface InventoryModalProps {
   product: Product;
   godowns: Godown[];
   onClose: () => void;
+  onUpdated?: () => void;
 }
 
-export default function InventoryModal({ product, godowns, onClose }: InventoryModalProps) {
+export default function InventoryModal({ product, godowns, onClose, onUpdated }: InventoryModalProps) {
   const { jwt } = useAuth();
   const [quantities, setQuantities] = useState<Record<number, number>>(() => {
     const map: Record<number, number> = {};
@@ -22,12 +23,19 @@ export default function InventoryModal({ product, godowns, onClose }: InventoryM
     return map;
   });
   const [saving, setSaving] = useState<number | null>(null);
+  const [transferring, setTransferring] = useState<number | null>(null);
+  const [transferTargets, setTransferTargets] = useState<Record<number, string>>({});
   const [addGodownId, setAddGodownId] = useState<string>("");
   const [addQty, setAddQty] = useState(0);
   const [adding, setAdding] = useState(false);
 
   const linkedGodownIds = new Set(product.inventory.map((inv) => inv.godown.id));
   const availableGodowns = godowns.filter((g) => !linkedGodownIds.has(g.id));
+
+  const refreshParent = () => {
+    onUpdated?.();
+    onClose();
+  };
 
   const saveInventory = async (godownId: number) => {
     if (!jwt) return;
@@ -46,13 +54,37 @@ export default function InventoryModal({ product, godowns, onClose }: InventoryM
     }
   };
 
+  const transferGodown = async (fromGodownId: number) => {
+    if (!jwt) return;
+    const toId = Number(transferTargets[fromGodownId]);
+    if (!toId) {
+      toast.error("Select a godown to move to");
+      return;
+    }
+    setTransferring(fromGodownId);
+    try {
+      await productService.transferGodown(jwt, {
+        productId: product.id,
+        fromGodownId,
+        toGodownId: toId,
+        quantity: quantities[fromGodownId] ?? 0,
+      });
+      toast.success("Godown corrected — no audit log created");
+      refreshParent();
+    } catch {
+      toast.error("Failed to transfer godown");
+    } finally {
+      setTransferring(null);
+    }
+  };
+
   const handleAddGodown = async () => {
     if (!jwt || !addGodownId) return;
     setAdding(true);
     try {
       await productService.linkGodownToProduct(jwt, product.id, Number(addGodownId), addQty);
       toast.success("Godown linked");
-      onClose();
+      refreshParent();
     } catch {
       toast.error("Failed to link godown");
     } finally {
@@ -62,11 +94,11 @@ export default function InventoryModal({ product, godowns, onClose }: InventoryM
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <h2 className="font-semibold text-gray-900">Edit Inventory</h2>
-            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[300px]">{product.name}</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[300px]">{formatDisplayLabel(product.name)}</p>
           </div>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
             <X size={16} />
@@ -77,30 +109,64 @@ export default function InventoryModal({ product, godowns, onClose }: InventoryM
           {product.inventory.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-4">No godowns linked yet</p>
           )}
-          {product.inventory.map((inv) => (
-            <div key={inv.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
-              <Warehouse size={15} className="text-gray-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800">{inv.godown.name}</p>
-                {inv.godown.location && <p className="text-xs text-gray-400">{inv.godown.location}</p>}
+          {product.inventory.map((inv) => {
+            const otherGodowns = godowns.filter((g) => g.id !== inv.godown.id);
+            return (
+              <div key={inv.id} className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+                <div className="flex items-center gap-3">
+                  <Warehouse size={15} className="text-gray-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">{formatDisplayLabel(inv.godown.name)}</p>
+                    {inv.godown.location && <p className="text-xs text-gray-400">{inv.godown.location}</p>}
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={quantities[inv.godown.id] ?? inv.quantity}
+                    onChange={(e) => setQuantities((q) => ({ ...q, [inv.godown.id]: Number(e.target.value) }))}
+                    className="w-20 px-2 py-1.5 text-sm text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <button
+                    onClick={() => saveInventory(inv.godown.id)}
+                    disabled={saving === inv.godown.id}
+                    className="px-3 py-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-gray-900 rounded-lg transition flex items-center gap-1"
+                  >
+                    {saving === inv.godown.id ? <Loader2 size={12} className="animate-spin" /> : null}
+                    Save Qty
+                  </button>
+                </div>
+                {otherGodowns.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
+                    <ArrowRightLeft size={13} className="text-gray-400 shrink-0" />
+                    <span className="text-xs text-gray-500 shrink-0">Wrong godown?</span>
+                    <select
+                      value={transferTargets[inv.godown.id] ?? ""}
+                      onChange={(e) =>
+                        setTransferTargets((t) => ({ ...t, [inv.godown.id]: e.target.value }))
+                      }
+                      className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="">Move to…</option>
+                      {otherGodowns.map((g) => (
+                        <option key={g.id} value={g.id}>{formatDisplayLabel(g.name)}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => transferGodown(inv.godown.id)}
+                      disabled={transferring === inv.godown.id || !transferTargets[inv.godown.id]}
+                      className="px-2.5 py-1.5 text-xs font-medium bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg transition whitespace-nowrap"
+                    >
+                      {transferring === inv.godown.id ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        "Move"
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
-              <input
-                type="number"
-                min={0}
-                value={quantities[inv.godown.id] ?? inv.quantity}
-                onChange={(e) => setQuantities((q) => ({ ...q, [inv.godown.id]: Number(e.target.value) }))}
-                className="w-20 px-2 py-1.5 text-sm text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <button
-                onClick={() => saveInventory(inv.godown.id)}
-                disabled={saving === inv.godown.id}
-                className="px-3 py-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-gray-900 rounded-lg transition flex items-center gap-1"
-              >
-                {saving === inv.godown.id ? <Loader2 size={12} className="animate-spin" /> : null}
-                Save
-              </button>
-            </div>
-          ))}
+            );
+          })}
 
           {availableGodowns.length > 0 && (
             <div className="mt-4 p-3 border border-dashed border-gray-300 rounded-xl">
@@ -112,7 +178,9 @@ export default function InventoryModal({ product, godowns, onClose }: InventoryM
                   className="flex-1 text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="">Select godown</option>
-                  {availableGodowns.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  {availableGodowns.map((g) => (
+                    <option key={g.id} value={g.id}>{formatDisplayLabel(g.name)}</option>
+                  ))}
                 </select>
                 <input
                   type="number"

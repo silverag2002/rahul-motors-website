@@ -1,6 +1,7 @@
 "use client";
 
 import { Product } from "../../types";
+import { formatDisplayLabel } from "../../lib/utils";
 import { Trash2, AlertTriangle } from "lucide-react";
 
 interface DeleteProductDialogProps {
@@ -20,7 +21,7 @@ export default function DeleteProductDialog({ product, onConfirm, onCancel }: De
           <h2 className="text-lg font-semibold text-gray-900">Delete Product</h2>
         </div>
         <p className="text-gray-600 text-sm mb-1">Are you sure you want to delete:</p>
-        <p className="font-semibold text-gray-900 mb-4">"{product.name}"</p>
+        <p className="font-semibold text-gray-900 mb-4">"{formatDisplayLabel(product.name)}"</p>
         <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-5">
           This action is permanent and cannot be undone. All inventory data for this product will be lost.
         </p>

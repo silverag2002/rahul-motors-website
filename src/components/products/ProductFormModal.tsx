@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Product, Category, Godown, CreateProductData } from "../../types";
 import { productService } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "sonner";
 import { X, Loader2, Plus, Minus } from "lucide-react";
+import { formatDisplayLabel } from "../../lib/utils";
 
 interface ProductFormModalProps {
   product: Product | null;
@@ -20,12 +21,61 @@ interface InventoryEntry {
   quantity: number;
 }
 
+interface FormState {
+  name: string;
+  brand: string;
+  car_name: string;
+  part_no: string;
+  description: string;
+  minimum_selling_price: string;
+  purchase_price: string;
+}
+
+function parseOptionalPrice(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const num = Number(trimmed);
+  return Number.isNaN(num) ? null : num;
+}
+
+// Defined at module scope so its identity is stable across renders.
+// (Previously this lived inside the component, which remounted the input
+// on every keystroke and made it lose focus mid-typing.)
+function Field({
+  label,
+  name,
+  type = "text",
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  name: keyof FormState;
+  type?: string;
+  placeholder?: string;
+  value: string;
+  onChange: (name: keyof FormState, value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(name, e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+      />
+    </div>
+  );
+}
+
 export default function ProductFormModal({ product, categories, godowns, onClose, onSuccess }: ProductFormModalProps) {
   const { jwt } = useAuth();
   const isEdit = !!product;
   const [loading, setLoading] = useState(false);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormState>({
     name: product?.name || "",
     brand: product?.brand || "",
     car_name: product?.carName || "",
@@ -34,6 +84,10 @@ export default function ProductFormModal({ product, categories, godowns, onClose
     minimum_selling_price: product?.minimumSellingPrice?.toString() || "",
     purchase_price: product?.purchasePrice?.toString() || "",
   });
+
+  const updateField = useCallback((name: keyof FormState, value: string) => {
+    setForm((f) => ({ ...f, [name]: value }));
+  }, []);
 
   const [selectedCategories, setSelectedCategories] = useState<Set<number>>(
     new Set(product?.categories.map((c) => c.id) || [])
@@ -73,25 +127,37 @@ export default function ProductFormModal({ product, categories, godowns, onClose
 
     setLoading(true);
     try {
-      const data: CreateProductData = {
-        name: form.name.trim(),
-        brand: form.brand.trim() || undefined,
-        car_name: form.car_name.trim() || undefined,
-        part_no: form.part_no.trim() || undefined,
-        description: form.description.trim() || undefined,
-        minimum_selling_price: form.minimum_selling_price ? Number(form.minimum_selling_price) : undefined,
-        purchase_price: form.purchase_price ? Number(form.purchase_price) : undefined,
-        categories: [...selectedCategories],
-        inventory,
-        imageIds: [],
-      };
+      const minimumSellingPrice = parseOptionalPrice(form.minimum_selling_price);
+      const purchasePrice = parseOptionalPrice(form.purchase_price);
 
       if (isEdit) {
-        await productService.updateProduct(jwt, product!.id, data);
+        await productService.updateProduct(jwt, product!.id, {
+          name: form.name.trim(),
+          brand: form.brand.trim() || null,
+          car_name: form.car_name.trim() || null,
+          part_no: form.part_no.trim() || null,
+          description: form.description.trim() || null,
+          minimum_selling_price: minimumSellingPrice,
+          purchase_price: purchasePrice,
+          categories: [...selectedCategories],
+        });
       } else {
+        const data: CreateProductData = {
+          name: form.name.trim(),
+          brand: form.brand.trim() || undefined,
+          car_name: form.car_name.trim() || undefined,
+          part_no: form.part_no.trim() || undefined,
+          description: form.description.trim() || undefined,
+          minimum_selling_price: minimumSellingPrice ?? undefined,
+          purchase_price: purchasePrice ?? undefined,
+          categories: [...selectedCategories],
+          inventory,
+          imageIds: [],
+        };
         await productService.createProduct(jwt, data);
       }
       onSuccess();
+      toast.success(isEdit ? "Product updated" : "Product created");
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.message || "Failed to save product";
       toast.error(msg);
@@ -99,19 +165,6 @@ export default function ProductFormModal({ product, categories, godowns, onClose
       setLoading(false);
     }
   };
-
-  const Field = ({ label, name, type = "text", placeholder }: { label: string; name: keyof typeof form; type?: string; placeholder?: string }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
-      <input
-        type={type}
-        value={form[name]}
-        onChange={(e) => setForm((f) => ({ ...f, [name]: e.target.value }))}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-      />
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -129,14 +182,14 @@ export default function ProductFormModal({ product, categories, godowns, onClose
           {/* Basic info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <Field label="Product Name *" name="name" placeholder="e.g. Air Filter Assembly" />
+              <Field label="Product Name *" name="name" placeholder="e.g. Air Filter Assembly" value={form.name} onChange={updateField} />
             </div>
-            <Field label="Brand" name="brand" placeholder="e.g. Bosch" />
-            <Field label="Car Model" name="car_name" placeholder="e.g. Maruti Swift" />
-            <Field label="Part No" name="part_no" placeholder="e.g. AF-12345" />
+            <Field label="Brand" name="brand" placeholder="e.g. Bosch" value={form.brand} onChange={updateField} />
+            <Field label="Car Model" name="car_name" placeholder="e.g. Maruti Swift" value={form.car_name} onChange={updateField} />
+            <Field label="Part No" name="part_no" placeholder="e.g. AF-12345" value={form.part_no} onChange={updateField} />
             <div />
-            <Field label="Min Selling Price (₹)" name="minimum_selling_price" type="number" placeholder="0" />
-            <Field label="Purchase Price (₹)" name="purchase_price" type="number" placeholder="0" />
+            <Field label="Min Selling Price (₹)" name="minimum_selling_price" type="number" placeholder="0" value={form.minimum_selling_price} onChange={updateField} />
+            <Field label="Purchase Price (₹)" name="purchase_price" type="number" placeholder="0" value={form.purchase_price} onChange={updateField} />
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
               <textarea
@@ -165,7 +218,7 @@ export default function ProductFormModal({ product, categories, godowns, onClose
                         : "bg-white text-gray-600 border-gray-300 hover:border-amber-400"
                     }`}
                   >
-                    {cat.name}
+                    {formatDisplayLabel(cat.name)}
                   </button>
                 ))}
               </div>
@@ -197,7 +250,7 @@ export default function ProductFormModal({ product, categories, godowns, onClose
                         className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
                       >
                         {godowns.filter((g) => !usedGodowns.has(g.id) || g.id === row.godownId).map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}</option>
+                          <option key={g.id} value={g.id}>{formatDisplayLabel(g.name)}</option>
                         ))}
                       </select>
                       <input

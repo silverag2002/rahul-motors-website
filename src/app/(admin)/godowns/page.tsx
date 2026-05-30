@@ -5,6 +5,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { godownService } from "../../../lib/api";
 import { Godown } from "../../../types";
 import { toast } from "sonner";
+import { formatDisplayLabel } from "../../../lib/utils";
 import { Plus, Edit2, Trash2, Warehouse, X, Loader2, Check, MapPin, Search } from "lucide-react";
 
 export default function GodownsPage() {
@@ -240,7 +241,7 @@ export default function GodownsPage() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-800">Delete godown?</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{godown.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatDisplayLabel(godown.name)}</p>
                   </div>
                   <div className="flex gap-2 w-full">
                     <button
@@ -267,7 +268,7 @@ export default function GodownsPage() {
                       <Warehouse size={18} className="text-amber-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{godown.name}</p>
+                      <p className="text-sm font-semibold text-gray-800 truncate">{formatDisplayLabel(godown.name)}</p>
                       {godown.location ? (
                         <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5 truncate">
                           <MapPin size={10} className="shrink-0" />

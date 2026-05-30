@@ -6,7 +6,13 @@ import { auditLogService } from "../../../lib/api";
 import { AuditLog } from "../../../types";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, RefreshCw, ClipboardList, Filter } from "lucide-react";
-import { formatDate } from "../../../lib/utils";
+import { formatDate, formatDisplayLabel } from "../../../lib/utils";
+import {
+  formatSignedQuantity,
+  formatQuantityValue,
+  hasQuantityDetails,
+  getAuditLogCategoryName,
+} from "../../../lib/auditLogDisplay";
 import { ACTION_COLORS, LOG_ACTIONS } from "../../../lib/constants";
 
 export default function AuditLogsPage() {
@@ -102,14 +108,20 @@ export default function AuditLogsPage() {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Action</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Product</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Category</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600 hidden md:table-cell">User</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600 hidden lg:table-cell">Description</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600 hidden md:table-cell">Qty</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600 hidden md:table-cell">Change</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600 hidden lg:table-cell">Before</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600 hidden lg:table-cell">After</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600 hidden xl:table-cell">Present</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-600">Date & Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {logs.map((log) => (
+                {logs.map((log) => {
+                  const categoryName = getAuditLogCategoryName(log);
+                  return (
                   <tr key={log.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[log.action] || "bg-gray-100 text-gray-700"}`}>
@@ -117,8 +129,17 @@ export default function AuditLogsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-800 truncate max-w-[180px]">{log.product?.name || "—"}</p>
-                      {log.godown && <p className="text-xs text-gray-400">{log.godown.name}</p>}
+                      <p className="font-medium text-gray-800 truncate max-w-[180px]">{formatDisplayLabel(log.product?.name) || "—"}</p>
+                      {log.godown && <p className="text-xs text-gray-400">{formatDisplayLabel(log.godown.name)}</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {categoryName ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                          {formatDisplayLabel(categoryName)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 hidden md:table-cell">
                       {log.user?.name || log.user?.email || "—"}
@@ -127,15 +148,42 @@ export default function AuditLogsPage() {
                       <p className="truncate">{log.description || "—"}</p>
                     </td>
                     <td className="px-4 py-3 text-right hidden md:table-cell">
-                      {log.quantity != null ? (
-                        <span className="font-medium text-gray-700">{log.quantity}</span>
+                      {hasQuantityDetails(log) ? (
+                        <span className={`font-semibold ${
+                          (log.quantityChange ?? 0) > 0
+                            ? "text-green-700"
+                            : (log.quantityChange ?? 0) < 0
+                              ? "text-red-600"
+                              : "text-gray-700"
+                        }`}>
+                          {formatSignedQuantity(
+                            log.quantityChange ??
+                              (log.action.includes("INCREASED") && log.quantity != null
+                                ? log.quantity
+                                : log.action.includes("DECREASED") && log.quantity != null
+                                  ? -log.quantity
+                                  : null)
+                          )}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600 hidden lg:table-cell">
+                      {formatQuantityValue(log.previousQuantity)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600 hidden lg:table-cell">
+                      {formatQuantityValue(log.newQuantity)}
+                    </td>
+                    <td className="px-4 py-3 text-right hidden xl:table-cell">
+                      {log.currentQuantity != null ? (
+                        <span className="font-medium text-amber-700">{log.currentQuantity}</span>
                       ) : "—"}
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-400 whitespace-nowrap">
                       {formatDate(log.createdAt)}
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>

@@ -52,6 +52,10 @@ export interface AuditLog {
   action: string;
   description?: string;
   quantity?: number;
+  quantityChange?: number;
+  previousQuantity?: number;
+  newQuantity?: number;
+  currentQuantity?: number;
   createdAt: string;
   date_time?: string;
   product?: { id: number; name: string; brand?: string };
@@ -72,8 +76,8 @@ export interface LoginCredentials {
 
 export interface CreateProductData {
   name: string;
-  minimum_selling_price?: number;
-  purchase_price?: number;
+  minimum_selling_price?: number | null;
+  purchase_price?: number | null;
   description?: string;
   brand?: string;
   car_name?: string;
@@ -86,10 +90,29 @@ export interface CreateProductData {
   imageIds: number[];
 }
 
+export interface UpdateProductData {
+  name?: string;
+  minimum_selling_price?: number | null;
+  purchase_price?: number | null;
+  description?: string | null;
+  brand?: string | null;
+  car_name?: string | null;
+  part_no?: string | null;
+  categories?: number[];
+  imageIds?: number[];
+}
+
 export interface UpdateInventoryData {
   productId: number;
   quantity: number;
   godownId: number;
+}
+
+export interface TransferGodownData {
+  productId: number;
+  fromGodownId: number;
+  toGodownId: number;
+  quantity?: number;
 }
 
 export interface ExportOptions {
@@ -99,6 +122,7 @@ export interface ExportOptions {
 }
 
 export interface SearchParams {
+  q?: string;
   name?: string;
   brand?: string;
   category?: string;

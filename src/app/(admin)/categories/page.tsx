@@ -6,6 +6,7 @@ import { categoryService } from "../../../lib/api";
 import { Category } from "../../../types";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Tag, X, Loader2, Check, Search } from "lucide-react";
+import { formatDisplayLabel } from "../../../lib/utils";
 
 export default function CategoriesPage() {
   const { jwt } = useAuth();
@@ -264,8 +265,8 @@ export default function CategoriesPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-xs font-semibold text-gray-700 text-center truncate" title={cat.name}>
-                    {cat.name}
+                  <p className="text-xs font-semibold text-gray-700 text-center truncate" title={formatDisplayLabel(cat.name)}>
+                    {formatDisplayLabel(cat.name)}
                   </p>
                 )}
               </div>

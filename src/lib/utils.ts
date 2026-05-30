@@ -44,3 +44,10 @@ export function formatDateShort(dateStr: string | undefined): string {
 export function getTotalInventory(inventory: Array<{ quantity: number }> = []): number {
   return inventory.reduce((sum, inv) => sum + (inv.quantity || 0), 0);
 }
+
+/** Uppercase label for products, categories, brands, godowns, etc. */
+export function formatDisplayLabel(value?: string | null): string {
+  if (value == null) return "";
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toUpperCase() : "";
+}

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { productService, categoryService, godownService } from "../../../lib/api";
 import { Product, Category, Godown, SearchParams } from "../../../types";
-import { formatCurrency, getTotalInventory } from "../../../lib/utils";
+import { formatCurrency, formatDisplayLabel, getTotalInventory } from "../../../lib/utils";
 import { toast } from "sonner";
 import { useSearchParams } from "next/navigation";
 import {
@@ -34,6 +34,8 @@ export default function ProductsPage() {
   // Filters
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [partNo, setPartNo] = useState("");
+  const [partNoInput, setPartNoInput] = useState("");
   const [selectedBrand, setSelectedBrand] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedGodown, setSelectedGodown] = useState("");
@@ -59,6 +61,7 @@ export default function ProductsPage() {
     try {
       const params: SearchParams = { page: p, pageSize };
       if (search) params.name = search;
+      if (partNo) params.partNo = partNo;
       if (selectedBrand) params.brand = selectedBrand;
       if (selectedCategory) params.categoryId = Number(selectedCategory);
       if (selectedGodown) params.godownId = Number(selectedGodown);
@@ -73,7 +76,7 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [jwt, page, search, selectedBrand, selectedCategory, selectedGodown, minQty, maxQty]);
+  }, [jwt, page, search, partNo, selectedBrand, selectedCategory, selectedGodown, minQty, maxQty]);
 
   useEffect(() => {
     if (!jwt) return;
@@ -89,11 +92,16 @@ export default function ProductsPage() {
   }, [jwt]);
 
   useEffect(() => { loadData(page); }, [page]);
-  useEffect(() => { if (page === 1) loadData(1); else setPage(1); }, [search, selectedBrand, selectedCategory, selectedGodown, minQty, maxQty]);
+  useEffect(() => { if (page === 1) loadData(1); else setPage(1); }, [search, partNo, selectedBrand, selectedCategory, selectedGodown, minQty, maxQty]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSearch(searchInput);
+  };
+
+  const handlePartNoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPartNo(partNoInput.trim());
   };
 
   const applyQtyFilter = () => {
@@ -102,12 +110,13 @@ export default function ProductsPage() {
   };
 
   const clearFilters = () => {
-    setSearch(""); setSearchInput(""); setSelectedBrand(""); setSelectedCategory(""); setSelectedGodown("");
+    setSearch(""); setSearchInput(""); setPartNo(""); setPartNoInput("");
+    setSelectedBrand(""); setSelectedCategory(""); setSelectedGodown("");
     setMinQty(""); setMaxQty(""); setMinQtyInput(""); setMaxQtyInput("");
   };
 
   const hasQtyFilter = minQty !== "" || maxQty !== "";
-  const hasFilters = search || selectedBrand || selectedCategory || selectedGodown || hasQtyFilter;
+  const hasFilters = search || partNo || selectedBrand || selectedCategory || selectedGodown || hasQtyFilter;
 
   const stockFilterLabel = (() => {
     if (maxQty === "0") return "Out of Stock";
@@ -173,13 +182,33 @@ export default function ProductsPage() {
                 <input
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search by name..."
+                  placeholder="Search by name, brand, part no..."
                   className="w-full pl-9 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 />
               </div>
               <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-gray-900 font-medium text-sm rounded-lg transition shrink-0">
                 Search
               </button>
+            </form>
+            <form onSubmit={handlePartNoSubmit} className="hidden sm:flex gap-2">
+              <div className="relative w-44">
+                <input
+                  value={partNoInput}
+                  onChange={(e) => setPartNoInput(e.target.value)}
+                  placeholder="Part No..."
+                  className="w-full pl-3 pr-8 py-2 text-sm font-mono bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                />
+                {partNoInput && (
+                  <button
+                    type="button"
+                    onClick={() => { setPartNoInput(""); setPartNo(""); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    title="Clear part no"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
             </form>
             <button onClick={() => loadData(page)} className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition" title="Refresh">
               <RefreshCw size={16} />
@@ -205,7 +234,7 @@ export default function ProductsPage() {
               className="text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               <option value="">All Brands</option>
-              {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+              {brands.map((b) => <option key={b} value={b}>{formatDisplayLabel(b)}</option>)}
             </select>
             <select
               value={selectedCategory}
@@ -213,7 +242,7 @@ export default function ProductsPage() {
               className="text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               <option value="">All Categories</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {categories.map((c) => <option key={c.id} value={c.id}>{formatDisplayLabel(c.name)}</option>)}
             </select>
             <select
               value={selectedGodown}
@@ -221,7 +250,7 @@ export default function ProductsPage() {
               className="text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               <option value="">All Godowns</option>
-              {godowns.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              {godowns.map((g) => <option key={g.id} value={g.id}>{formatDisplayLabel(g.name)}</option>)}
             </select>
 
             {/* Stock quantity filter */}
@@ -348,17 +377,17 @@ export default function ProductsPage() {
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-medium text-gray-900 truncate max-w-[180px]">{product.name}</p>
-                            {product.carName && <p className="text-xs text-gray-400 truncate">{product.carName}</p>}
+                            <p className="font-medium text-gray-900 truncate max-w-[180px]">{formatDisplayLabel(product.name)}</p>
+                            {product.carName && <p className="text-xs text-gray-400 truncate">{formatDisplayLabel(product.carName)}</p>}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{product.brand || "—"}</td>
-                      <td className="px-4 py-3 text-gray-500 font-mono text-xs hidden lg:table-cell">{product.partNo || "—"}</td>
+                      <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{formatDisplayLabel(product.brand) || "—"}</td>
+                      <td className="px-4 py-3 text-gray-500 font-mono text-xs hidden lg:table-cell">{formatDisplayLabel(product.partNo) || "—"}</td>
                       <td className="px-4 py-3 hidden lg:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {product.categories.slice(0, 2).map((c) => (
-                            <span key={c.id} className="inline-flex px-1.5 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full border border-amber-200">{c.name}</span>
+                            <span key={c.id} className="inline-flex px-1.5 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full border border-amber-200">{formatDisplayLabel(c.name)}</span>
                           ))}
                           {product.categories.length > 2 && (
                             <span className="text-xs text-gray-400">+{product.categories.length - 2}</span>
@@ -478,7 +507,8 @@ export default function ProductsPage() {
         <InventoryModal
           product={inventoryProduct}
           godowns={godowns}
-          onClose={() => { setInventoryProduct(null); loadData(page); }}
+          onClose={() => setInventoryProduct(null)}
+          onUpdated={() => { setInventoryProduct(null); loadData(page); }}
         />
       )}
       {showExport && (
